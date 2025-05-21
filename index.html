@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>色谱峰拖尾因子分析</title>
+  <script src="https://cdn.bootcdn.net/ajax/libs/Chart.js/3.7.1/chart.min.js"></script>
+  <script src="https://cdn.bootcdn.net/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+  <style>
+    body { font-family: "Microsoft YaHei", sans-serif; margin: 20px; line-height: 1.6;}
+    h1 { 
+      text-align: center;
+      font-size: 24px;
+      margin: 10px 0; 
+    }
+    .container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+    #chart-container { 
+      width: 700px; 
+      height: 500px; 
+      margin: 20px 0;
+      position: relative;
+      cursor: crosshair;
+    }
+    #result-container {
+      width: 300px;
+      padding: 15px;
+      border-radius: 5px;
+      height: 500px;
+      overflow-y: auto;
+      margin-top: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-left: 30px;
+    }
+    #selection-box {
+      position: absolute;
+      border: 2px dashed #FA6093;
+      background: rgba(253, 207, 228, 0.1);
+      display: 'none';
+      pointer-events: none;
+    }
+    button { 
+      padding: 8px 15px; 
+      background: #151515; 
+      color: white; 
+      border: none; 
+      border-radius: 4px; 
+      cursor: pointer; 
+      margin-left: 10px;
+      transition: all 0.2s;
+    }
+    button:hover { background: #414141; transform: translateY(-1.2px); }
+    button:disabled { 
+      background: #cccccc; 
+      cursor: not-allowed; 
+    }
+    .loader { 
+      display: none; 
+      border: 4px solid #f3f3f3; 
+      border-top: 4px solid #4CAF50; 
+      border-radius: 50%; 
+      width: 30px; 
+      height: 30px; 
+      animation: spin 1s linear infinite; 
+      margin: 10px auto; 
+    }
+    @keyframes spin { 
+      0% { transform: rotate(0deg); } 
+      100% { transform: rotate(360deg); } 
+    }
+    .card {
+      background: white;
+      padding: 12px;
+      border-radius: 5px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+      margin-bottom: 8px;
+      margin-bottom: 12px;
+      transition: all 0.2s;
+    }
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15); 
+    }
+    .highlight {
+      background-color: #fffde7;
+      padding: 2px 5px;
+      border-radius: 3px;
+    }
+    .result-item {
+      margin: 8px 0;
+      padding: 8px;
+      background: white;
+      border-radius: 3px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .info-card {
+      background: #EEFCFE;
+    }
+    .error-card {
+      background: #ffebee;
+    }
+    .success-card {
+      background: #FEEEF5;
+    }
+    .warning-card {
+      background: #EEFCFE;
+    }
+    .control-row {
+      display: flex;
+      align-items: center;
+      margin: 15px 0;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .file-input-container {
+      display: inline-flex;
+      align-items: center;
+      height: 36px;
+      border-radius: 4px;
+      overflow: hidden;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      margin-left: 30px;
+      margin-right: 20px;
+    }
+    .file-input-btn {
+      background: #151515;
+      color: white;
+      padding: 8px 20px;
+      border: none;
+      border-radius: 4px 0 0 4px;
+      cursor: pointer;
+      font-family: "Microsoft YaHei", sans-serif;
+      font-size: 14px;
+      transition: all 0.3s;
+      height: 100%;
+      display: inline-flex;
+      align-items: center;
+    }
+    .file-input-btn:hover {
+      background: #414141;
+    }
+    .file-name-display {
+      background: white;
+      font-size: 14px;
+      padding: 0 20px 0 25px;
+      border: 1px solid #ddd;
+      border-left: none;
+      border-radius: 0 4px 4px 0;
+      height: 100%;
+      display: inline-flex;
+      align-items: center;
+      min-width: 150px;
+      max-width: 250px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .hidden-file-input {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="control-row">
+    <div class="file-input-container">
+      <label for="fileInput" class="file-input-btn">选择文件</label>
+      <span id="fileNameDisplay" class="file-name-display">(ΦωΦ)呱呱！</span>
+      <input type="file" id="fileInput" accept=".csv" class="hidden-file-input">
+    </div>
+    <button id="selectBtn" disabled>开始框选</button>
+    <button id="calculateBtn" disabled>计算拖尾因子</button>
+    <button id="resetBtn" disabled>重置分析</button>
+  </div>
+  
+  <div class="loader" id="loader"></div>
+  
+  <div class="container">
+    <div id="chart-container">
+      <canvas id="chromatogramChart"></canvas>
+      <div id="selection-box"></div>
+    </div>
+    
+    <div id="result-container">
+      <div class="card">
+        <p>请点击"选择文件"上传数据喵！</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 核心变量
+    let chart;
+    let peakData = [];
+    let isSelecting = false;
+    let selectionStart = { x: 0, y: 0 };
+    let selectedRange = null;
+    let chartArea = null;
+
+    // 1. 文件上传与解析
+    document.getElementById('fileInput').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      const fileNameDisplay = document.getElementById('fileNameDisplay');
+      
+      if (file) {
+        fileNameDisplay.textContent = file.name;
+        
+        showLoading("正在解析文件...");
+        
+        Papa.parse(file, {
+          header: false,
+          skipEmptyLines: true,
+          complete: function(results) {
+            peakData = results.data
+              .filter(row => row.length >= 4)
+              .map((row, index) => ({
+                id: index,
+                mL: parseFloat(row[1]),
+                value: parseFloat(row[3])
+              }))
+              .filter(point => !isNaN(point.mL) && !isNaN(point.value));
+
+            if (peakData.length < 3) {
+              showError("数据不足：至少需要3个有效数据点");
+              return;
+            }
+
+            hideLoading();
+            initChart(peakData);
+            enableButtons();
+            updateResult(`
+              <div class="card success-card">
+                数据加载完成，请点击"开始框选"按钮，然后在图表上框选产物峰区域
+              </div>
+            `);
+          },
+          error: function(err) {
+            showError("文件解析失败：" + err.message);
+          }
+        });
+      } else {
+        fileNameDisplay.textContent = '未选择文件';
+      }
+    });
+
+    // ...（其余JavaScript代码保持不变）...
+    // 2. 图表初始化
+    function initChart(data) {
+      const ctx = document.getElementById('chromatogramChart').getContext('2d');
+      if (chart) chart.destroy();
+
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          datasets: [{
+            label: '吸光度',
+            data: data.map(p => ({x: p.mL, y: p.value})),
+            borderColor: '#2B2B2B',
+            borderWidth: 2.5,
+            pointRadius: 0,
+            tension: 0.1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              type: 'linear',
+              title: { display: true, text: 'mL', font: {weight: 'bold'} },
+              grid: { 
+                color: 'rgba(0,0,0,0.05)',
+                lineWidth: 1
+              },
+              border: {
+                color: '#000',
+                width: 2  // 横坐标轴加粗
+              },
+              ticks: {
+                font: {
+                  weight: 'bold'  // 横坐标刻度加粗
+                }
+              }
+            },
+            y: {
+              title: { display: true, text: '吸光度', font: {weight: 'bold'} },
+              grid: { 
+                color: 'rgba(0,0,0,0.05)',
+                lineWidth: 1
+              },
+              border: {
+                color: '#000',
+                width: 2  // 纵坐标轴加粗
+              },
+              ticks: {
+                font: {
+                  weight: 'bold'  // 纵坐标刻度加粗
+                }
+              }
+            }
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              caretPadding: 15,
+              bodySpacing: 8,
+              callbacks: {
+                label: (ctx) => 
+                  `mL: ${ctx.parsed.x.toFixed(2)}, 吸光度: ${ctx.parsed.y.toFixed(2)}`
+              }
+            }
+          },
+          interaction: {
+            intersect: false,
+            mode: 'index'
+          }
+        }
+      });
+      
+      setTimeout(() => { chartArea = chart.chartArea; }, 300);
+    }
+
+    // 3. 框选交互逻辑
+    document.getElementById('selectBtn').addEventListener('click', startSelection);
+    document.getElementById('resetBtn').addEventListener('click', resetAnalysis);
+    document.getElementById('calculateBtn').addEventListener('click', performAnalysis);
+
+    function startSelection() {
+      isSelecting = true;
+      document.getElementById('selection-box').style.display = 'none';
+      updateResult(`
+        <div class="card warning-card">
+          <span>请框选待分析区域……</span>
+        </div>
+      `);
+    }
+
+    // 鼠标事件处理
+    const chartContainer = document.getElementById('chart-container');
+    const selectionBox = document.getElementById('selection-box');
+
+    chartContainer.addEventListener('mousedown', (e) => {
+      if (!isSelecting || !chartArea) return;
+      
+      const mousePos = getMousePosition(e);
+      if (!isInChartArea(mousePos)) return;
+
+      selectionStart = mousePos;
+      selectionBox.style.left = mousePos.x + 'px';
+      selectionBox.style.top = mousePos.y + 'px';
+      selectionBox.style.width = '0';
+      selectionBox.style.height = '0';
+      selectionBox.style.display = 'block';
+    });
+
+    chartContainer.addEventListener('mousemove', (e) => {
+      if (!isSelecting || selectionBox.style.display !== 'block') return;
+      
+      const currentPos = getMousePosition(e);
+      const width = currentPos.x - selectionStart.x;
+      const height = currentPos.y - selectionStart.y;
+      
+      selectionBox.style.width = Math.abs(width) + 'px';
+      selectionBox.style.height = Math.abs(height) + 'px';
+      selectionBox.style.left = (width < 0 ? currentPos.x : selectionStart.x) + 'px';
+      selectionBox.style.top = (height < 0 ? currentPos.y : selectionStart.y) + 'px';
+    });
+
+    chartContainer.addEventListener('mouseup', (e) => {
+      if (!isSelecting) return;
+      
+      const endPos = getMousePosition(e);
+      if (!isInChartArea(endPos) || 
+          Math.abs(endPos.x - selectionStart.x) < 10 || 
+          Math.abs(endPos.y - selectionStart.y) < 10) {
+        cancelSelection();
+        return;
+      }
+
+      // 转换为数据坐标
+      const xScale = chart.scales.x;
+      const yScale = chart.scales.y;
+      
+      selectedRange = {
+        mL: {
+          min: xScale.getValueForPixel(Math.min(selectionStart.x, endPos.x)),
+          max: xScale.getValueForPixel(Math.max(selectionStart.x, endPos.x))
+        },
+        value: {
+          min: yScale.getValueForPixel(Math.max(selectionStart.y, endPos.y)),
+          max: yScale.getValueForPixel(Math.min(selectionStart.y, endPos.y))
+        }
+      };
+      
+      isSelecting = false;
+      document.getElementById('calculateBtn').disabled = false;
+      updateResult(`
+        <div class="card success-card">
+          <strong>选择完成：</strong><br>
+          mL范围： ${selectedRange.mL.min.toFixed(2)} - ${selectedRange.mL.max.toFixed(2)}<br>
+          吸光度范围： ${selectedRange.value.min.toFixed(2)} - ${selectedRange.value.max.toFixed(2)}
+        </div>
+      `);
+    });
+
+    // 4. 核心分析逻辑
+    function performAnalysis() {
+      if (!selectedRange || !peakData.length) {
+        showError("请先框选目标峰区域");
+        return;
+      }
+
+      showLoading("正在分析...");
+      
+      setTimeout(() => {
+        try {
+          // 获取框选范围内的点
+          const points = peakData.filter(p => 
+            p.mL >= selectedRange.mL.min && 
+            p.mL <= selectedRange.mL.max
+          );
+
+          if (points.length < 3) {
+            throw new Error("框选范围内数据点不足（至少需要3个点）");
+          }
+
+          // 获取边界值（取较高值）
+          const { baseline, leftValue, rightValue } = getBoundaryValues(
+            points, 
+            selectedRange.mL.min, 
+            selectedRange.mL.max
+          );
+
+          // 找到峰顶点（最高点）
+          const peakPoint = points.reduce((max, p) => 
+            p.value > max.value ? p : max
+          );
+
+          // 验证基线合理性
+          if (baseline >= peakPoint.value * 0.9) {
+            throw new Error(`基线值${baseline}过高，可能误取峰顶`);
+          }
+
+          // 计算5%高度阈值
+          const threshold = baseline + (peakPoint.value - baseline) * 0.05;
+          
+          // 查找边界点
+          const { leftEdge, rightEdge } = findPeakEdges(points, peakPoint, threshold);
+          
+          // 计算并显示结果
+          displayResults(baseline, peakPoint, threshold, leftEdge, rightEdge);
+          
+          // 可视化标记（已添加垂直线）
+          visualizeResults(points, baseline, peakPoint, leftEdge, rightEdge, threshold);
+          
+        } catch (e) {
+          showError("分析失败：" + e.message);
+        } finally {
+          hideLoading();
+        }
+      }, 100);
+    }
+
+    // 5. 关键函数
+    function getBoundaryValues(points, mL_min, mL_max) {
+      // 找到最接近左边界的点
+      const leftPoint = points.reduce((closest, p) => 
+        Math.abs(p.mL - mL_min) < Math.abs(closest.mL - mL_min) ? p : closest
+      );
+      
+      // 找到最接近右边界的点
+      const rightPoint = points.reduce((closest, p) => 
+        Math.abs(p.mL - mL_max) < Math.abs(closest.mL - mL_max) ? p : closest
+      );
+      
+      // 返回左右边界中较高的吸光度值
+      return {
+        leftValue: leftPoint.value,
+        rightValue: rightPoint.value,
+        baseline: Math.max(leftPoint.value, rightPoint.value)
+      };
+    }
+
+    function findPeakEdges(points, peakPoint, threshold) {
+      const peakIndex = points.findIndex(p => p.id === peakPoint.id);
+      let leftEdge, rightEdge;
+
+      // 向左查找左边界
+      for (let i = peakIndex; i >= 0; i--) {
+        if (points[i].value <= threshold || i === 0) {
+          leftEdge = points[i];
+          break;
+        }
+      }
+
+      // 向右查找右边界
+      for (let i = peakIndex; i < points.length; i++) {
+        if (points[i].value <= threshold || i === points.length - 1) {
+          rightEdge = points[i];
+          break;
+        }
+      }
+
+      if (!leftEdge || !rightEdge) {
+        throw new Error("无法确定峰边界（尝试扩大框选范围）");
+      }
+
+      return { leftEdge, rightEdge };
+    }
+
+    function displayResults(baseline, peakPoint, threshold, leftEdge, rightEdge) {
+      // 计算拖尾因子
+      const W_05h = rightEdge.mL - leftEdge.mL;
+      const d = peakPoint.mL - leftEdge.mL;
+      const T = (W_05h / (2 * d)).toFixed(3);
+      
+      // 判断峰形
+      let judgment = "";
+      if (T >= 0.95 && T <= 1.05) judgment = "✅ 对称峰";
+      else if (T > 1.05) judgment = "🔴 拖尾峰";
+      else judgment = "🔴 前延峰";
+
+      updateResult(`
+        <div class="card success-card">
+          <strong>拖尾因子 T = ${T}</strong><br><strong>${judgment}</strong> （标准范围：0.95-1.05）
+        </div>
+        <div class="card">
+          <strong>峰顶点：</strong> ${peakPoint.mL.toFixed(2)} mL，吸光度： ${peakPoint.value.toFixed(2)}
+        </div>
+        <div class="card">
+          <strong>峰范围：</strong> ${leftEdge.mL.toFixed(2)} - ${rightEdge.mL.toFixed(2)} mL
+        </div>
+        <div class="card">
+          <strong>基线吸光度：</strong> ${baseline.toFixed(2)}
+        </div>
+      `);
+    }
+
+    function visualizeResults(points, baseline, peakPoint, leftEdge, rightEdge, threshold) {
+      // 清除旧标记
+      chart.data.datasets = chart.data.datasets.slice(0, 1);
+      
+      // 计算垂直线坐标
+      const verticalLine = [
+        {x: peakPoint.mL, y: baseline},
+        {x: peakPoint.mL, y: peakPoint.value}
+      ];
+
+      // 添加分析标记
+      chart.data.datasets.push(
+        {
+          label: '基线',
+          data: [
+            {x: selectedRange.mL.min, y: baseline},
+            {x: selectedRange.mL.max, y: baseline}
+          ],
+          borderColor: '#9E9E9E',
+          borderWidth: 1,
+          borderDash: [5, 5],
+          pointRadius: 0
+        },
+        {
+          label: '分析区域',
+          data: points.map(p => ({x: p.mL, y: p.value})),
+          backgroundColor: 'rgba(189, 255, 255, 0.4)',
+          borderColor: 'rgba(189, 255, 255, 0.4)',
+          borderWidth: 1,
+          pointRadius: 0,
+          fill: true
+        },
+        {
+          label: '峰顶点',
+          data: [{x: peakPoint.mL, y: peakPoint.value}],
+          backgroundColor: '#FF5252',
+          pointRadius: 5,
+          borderWidth: 0
+        },
+        {
+          label: '5%高度线',
+          data: [
+            {x: leftEdge.mL, y: threshold},
+            {x: rightEdge.mL, y: threshold}
+          ],
+          borderColor: '#FF9800',
+          borderWidth: 1.5,
+          borderDash: [5, 3],
+          pointRadius: 0
+        },
+        {
+          label: '峰高垂直线',
+          data: verticalLine,
+          borderColor: '#FF9800',
+          borderWidth: 1.5,
+          borderDash: [5, 3],
+          pointRadius: 0
+        },
+        {
+          label: '左边界',
+          data: [{x: leftEdge.mL, y: leftEdge.value}],
+          backgroundColor: '#2196F3',
+          pointRadius: 5,
+          borderWidth: 0
+        },
+        {
+          label: '右边界',
+          data: [{x: rightEdge.mL, y: rightEdge.value}],
+          backgroundColor: '#673AB7',
+          pointRadius: 5,
+          borderWidth: 0
+        }
+      );
+      
+      chart.update();
+    }
+
+    // 工具函数
+    function getMousePosition(e) {
+      const rect = chartContainer.getBoundingClientRect();
+      return {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top
+      };
+    }
+
+    function isInChartArea(pos) {
+      return chartArea && 
+             pos.x >= chartArea.left && 
+             pos.x <= chartArea.right && 
+             pos.y >= chartArea.top && 
+             pos.y <= chartArea.bottom;
+    }
+
+    function resetAnalysis() {
+      selectedRange = null;
+      isSelecting = false;
+      selectionBox.style.display = 'none';
+      document.getElementById('calculateBtn').disabled = true;
+      
+      if (chart) {
+        chart.data.datasets = chart.data.datasets.slice(0, 1);
+        chart.update();
+      }
+      
+      updateResult(`
+        <div class="card info-card">
+          已重置分析，请重新框选目标峰
+        </div>
+      `);
+      startSelection(); 
+    }
+
+    function enableButtons() {
+      document.getElementById('selectBtn').disabled = false;
+      document.getElementById('resetBtn').disabled = false;
+    }
+
+    function showLoading(msg) {
+      document.getElementById('loader').style.display = 'block';
+      updateResult(`
+        <div class="card info-card">
+          ${msg}
+        </div>
+      `);
+    }
+
+    function hideLoading() {
+      document.getElementById('loader').style.display = 'none';
+    }
+
+    function updateResult(html) {
+      document.getElementById('result-container').innerHTML = html;
+    }
+
+    function showError(msg) {
+      updateResult(`
+        <div class="card error-card">
+          ⚠️ ${msg}
+        </div>
+      `);
+      hideLoading();
+    }
+
+    function cancelSelection() {
+      isSelecting = false;
+      selectionBox.style.display = 'none';
+      updateResult(`
+        <div class="card error-card">
+          选择已取消：请在数据区域内框选
+        </div>
+      `);
+    }
+  </script>
+</body>
+</html>
